@@ -32,7 +32,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="m.def">
-      <Filter>Source Files</Filter>
+      <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>
 </Project>
