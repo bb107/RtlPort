@@ -14,7 +14,7 @@
 
 #include <ntstatus.h>
 #define WIN32_NO_STATUS
-#include "../../RtlWow64/RtlWow64/RtlWow64.h"
+#include <RtlWow64\RtlWow64.h>
 #include "RtlNative.h"
 
 extern PVOID64 pfnWow64ConnectPort;
