@@ -1,0 +1,27 @@
+LIBRARY RtlPort
+EXPORTS
+
+RtlCreatePortA
+RtlCreatePortW
+
+RtlConnectPortA
+RtlConnectPortW
+
+RtlAllocatePortMessageContext
+RtlAllocatePortMessageContextEx
+RtlReleasePortMessageContext
+
+RtlListenPort
+RtlAcceptConnectPort
+RtlCompleteConnectPort
+
+RtlWriteReplyData
+RtlWriteRequestData
+
+RtlRequestPort
+RtlRequestWaitReplyPort
+RtlReplyPort
+RtlReplyWaitReplyPort
+RtlReplyWaitReceivePort
+
+RtlImpersonateClientOfPort
