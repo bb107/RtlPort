@@ -1,0 +1,3 @@
+[submodule "RtlWow64"]
+	path = RtlWow64
+	url = https://github.com/bb107/RtlWow64
