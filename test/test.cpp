@@ -24,6 +24,8 @@ DWORD NTAPI ClientThread(PVOID) {
         if (!NT_SUCCESS(RtlWriteRequestUlong(pContext, 0x00000000)))break;
         if (!NT_SUCCESS(RtlRequestPort(hPort, pContext)))break;
 
+        printf("Client success.\n");
+
     } while (false);
 
     if (hPort)NtClose(hPort);
@@ -64,6 +66,7 @@ int main() {
             }
             case 0x00000000: {
                 status = 0xC0000000;
+                printf("Server success.\n");
                 break;
             }
             default: {

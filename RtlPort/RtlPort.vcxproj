@@ -181,11 +181,6 @@
   <ItemGroup>
     <None Include="m.def" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\RtlWow64\RtlWow64\RtlWow64.vcxproj">
-      <Project>{c01b01a0-c928-4096-bd99-e354c5f6f53c}</Project>
-    </ProjectReference>
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
