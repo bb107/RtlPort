@@ -129,16 +129,19 @@ BOOLEAN NTAPI RtlAllocatePortMessageContextEx(
 
 BOOLEAN NTAPI RtlReleasePortMessageContext(_In_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext);
 
+// Server Port Only
 NTSTATUS NTAPI RtlListenPort(
 	_In_ HANDLE PortHandle,
 	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext);
 
+// Server Port Only
 NTSTATUS NTAPI RtlAcceptConnectPort(
 	_Out_ PHANDLE PortHandle,
 	_In_opt_ PVOID PortContext,
 	_In_ BOOLEAN AcceptConnection,
 	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext);
 
+// Server Port Only
 NTSTATUS NTAPI RtlCompleteConnectPort(_In_ HANDLE PortHandle);
 
 /*
@@ -152,10 +155,19 @@ NTSTATUS NTAPI RtlCompleteConnectPort(_In_ HANDLE PortHandle);
 
 //Pointer to the data attached to the message
 #define RtlMessageDataPtr(_pMessageContext_)	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->LpcData)
+
 //Data size
-#define RtlMessageDataLength(_pMessageContext_) (PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u1.s1.DataLength)
+#define RtlMessageDataLength(_pMessageContext_) (PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.DataInfoOffset?\
+												PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.DataInfoOffset-sizeof(PORT_MESSAGE64):\
+												PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u1.s1.DataLength)
+
 //Total length including message header
 #define RtlMessageTotalLength(_pMessageContext_) (PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u1.s1.TotalLength)
+
+//Pointer to the port data information
+#define RtlPortDataInformationPtr(_pMessageContext_) (PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.DataInfoOffset?\
+													PPORT_DATA_INFORMATION64(LPBYTE(&PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage)+PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.DataInfoOffset):\
+													PPORT_DATA_INFORMATION64(nullptr))
 
 //Base address of section mapping created locally
 #define RtlLocalSectionSharedMemoryPtr(_pMessageContext_)		(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->LocalView.ViewBase)
@@ -172,16 +184,18 @@ NTSTATUS NTAPI RtlCompleteConnectPort(_In_ HANDLE PortHandle);
 #define RtlWriteSmallStructure(_pMessageContext_, _type_, _data_)(\
 	assert(sizeof(_type_) <= 0xe8),\
 	(*((_type_*)(RtlMessageDataPtr(_pMessageContext_))) = (_type_)_data_),\
-	(RtlMessageDataLength(_pMessageContext_) = sizeof(_type_)),\
-	(RtlMessageTotalLength(_pMessageContext_) = sizeof(PORT_MESSAGE64) + sizeof(_type_)),\
-	(_pMessageContext_->PortMessage.u2.s2.Type = 0)\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u1.s1.DataLength = sizeof(_type_)),\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u1.s1.TotalLength = sizeof(PORT_MESSAGE64) + sizeof(_type_)),\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.Type = 0),\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.DataInfoOffset = 0)\
 )
 #else
 #define RtlWriteSmallStructure(_pMessageContext_, _type_, _data_)(\
 	(*((_type_*)(RtlMessageDataPtr(_pMessageContext_))) = (_type_)_data_),\
-	(RtlMessageDataLength(_pMessageContext_) = sizeof(_type_)),\
-	(RtlMessageTotalLength(_pMessageContext_) = sizeof(PORT_MESSAGE64)),\
-	(_pMessageContext_->PortMessage.u2.s2.Type = 0)\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u1.s1.DataLength = sizeof(_type_)),\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u1.s1.TotalLength = sizeof(PORT_MESSAGE64) + sizeof(_type_)),\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.Type = 0),\
+	(PRTL_PORT_MESSAGE_CONTEXT(_pMessageContext_)->PortMessage.u2.s2.DataInfoOffset = 0)\
 )
 #endif
 
@@ -201,16 +215,44 @@ NTSTATUS NTAPI RtlCompleteConnectPort(_In_ HANDLE PortHandle);
 #define RtlWriteReplyUlong64	RtlWriteRequestUlong64
 
 _Check_return_
-NTSTATUS NTAPI RtlWriteReplyData(
+NTSTATUS NTAPI RtlWriteReplyData2(
 	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
 	_In_reads_bytes_opt_(dwDataLength) LPCVOID pDataToWrite,
 	_In_ DWORD dwDataLength);
 
 _Check_return_
-NTSTATUS NTAPI RtlWriteRequestData(
+NTSTATUS NTAPI RtlWriteRequestData2(
 	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
 	_In_reads_bytes_opt_(dwDataLength) LPCVOID pDataToWrite,
 	_In_ DWORD dwDataLength);
+
+// Server Port Only
+NTSTATUS NTAPI RtlReadRequestData(
+	_In_ HANDLE PortHandle,
+	_In_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
+	_In_ ULONG DataEntryIndex,
+	_Out_ PVOID Buffer,
+	_In_ SIZE_T BufferSize,
+	_Out_opt_ PSIZE_T NumberOfBytesRead);
+
+// Server Port Only
+NTSTATUS NTAPI RtlWriteRequestData(
+	_In_ HANDLE PortHandle,
+	_In_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
+	_In_ ULONG DataEntryIndex,
+	_In_ PVOID Buffer,
+	_In_ SIZE_T BufferSize,
+	_Out_opt_ PSIZE_T NumberOfBytesWritten);
+
+_Check_return_
+NTSTATUS NTAPI RtlAddPortDataInformation(
+	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
+	_In_ PPORT_DATA_ENTRY pPortDataEntry);
+
+_Check_return_
+NTSTATUS NTAPI RtlRemovePortDataInformation(
+	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext);
+
 
 /*
 	------ Read/Write message data
@@ -233,6 +275,7 @@ NTSTATUS NTAPI RtlpRequestReplyPort(
 	_In_opt_ PLARGE_INTEGER Timeout,
 	_Inout_updates_bytes_(pMessageContext->PortMessage.u1.s1.DataLength + sizeof(*pMessageContext)) PRTL_PORT_MESSAGE_CONTEXT pMessageContext);
 
+// Not support PortMessageInformation
 NTSTATUS NTAPI RtlRequestPort(
 	_In_ HANDLE PortHandle,
 	_In_reads_bytes_(pMessageContext->PortMessage.u1.s1.DataLength + sizeof(*pMessageContext)) PRTL_PORT_MESSAGE_CONTEXT pMessageContext);
@@ -249,6 +292,7 @@ NTSTATUS NTAPI RtlReplyWaitReplyPort(
 	_In_ HANDLE PortHandle,
 	_Inout_updates_bytes_(pMessageContext->PortMessage.u1.s1.DataLength + sizeof(*pMessageContext)) PRTL_PORT_MESSAGE_CONTEXT pMessageContext);
 
+// Server Port Only
 NTSTATUS NTAPI RtlReplyWaitReceivePort(
 	_In_ HANDLE PortHandle,
 	_In_ BOOLEAN SendReply,

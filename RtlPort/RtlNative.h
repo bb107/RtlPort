@@ -172,6 +172,28 @@ typedef struct _LPCP_CONNECTION_MESSAGE64 {
 	REMOTE_PORT_VIEW64 ServerView;
 } LPCP_CONNECTION_MESSAGE64, * PLPCP_CONNECTION_MESSAGE64;
 
+typedef struct _PORT_DATA_ENTRY {
+	PVOID Base;
+	ULONG Size;
+} PORT_DATA_ENTRY, * PPORT_DATA_ENTRY;
+
+typedef struct _PORT_DATA_INFORMATION {
+	ULONG CountDataEntries;
+	PORT_DATA_ENTRY DataEntries[1];
+} PORT_DATA_INFORMATION, * PPORT_DATA_INFORMATION;
+
+#include <pshpack8.h>
+typedef struct _PORT_DATA_ENTRY64 {
+	PVOID64 Base;
+	ULONG Size;
+} PORT_DATA_ENTRY64, * PPORT_DATA_ENTRY64;
+
+typedef struct _PORT_DATA_INFORMATION64 {
+	ULONG CountDataEntries;
+	PORT_DATA_ENTRY64 DataEntries[1];
+} PORT_DATA_INFORMATION64, * PPORT_DATA_INFORMATION64;
+#include <poppack.h>
+
 
 #define PORT_MAXIMUM_MESSAGE_LENGTH64 512
 #define PORT_MAXIMUM_MESSAGE_LENGTH32 256
@@ -542,6 +564,30 @@ extern "C" {
 		NtImpersonateClientOfPort(
 			_In_ HANDLE PortHandle,
 			_In_ PPORT_MESSAGE Message
+		);
+
+	NTSYSAPI
+		NTSTATUS
+		NTAPI
+		NtReadRequestData(
+			_In_ HANDLE PortHandle,
+			_In_ PPORT_MESSAGE Message,
+			_In_ ULONG DataEntryIndex,
+			_Out_ PVOID Buffer,
+			_In_ SIZE_T BufferSize,
+			_Out_opt_ PSIZE_T NumberOfBytesRead
+		);
+
+	NTSYSAPI
+		NTSTATUS
+		NTAPI
+		NtWriteRequestData(
+			_In_ HANDLE PortHandle,
+			_In_ PPORT_MESSAGE Message,
+			_In_ ULONG DataEntryIndex,
+			_In_ PVOID Buffer,
+			_In_ SIZE_T BufferSize,
+			_Out_opt_ PSIZE_T NumberOfBytesWritten
 		);
 
 	_Must_inspect_result_

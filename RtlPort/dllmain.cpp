@@ -55,6 +55,8 @@ extern PVOID64 pfnWow64ReplyWaitReplyPort;
 extern PVOID64 pfnWow64ReplyWaitReceivePort;
 extern PVOID64 pfnWow64ReplyWaitReceivePortEx;
 extern PVOID64 pfnWow64ImpersonateClientOfPort;
+extern PVOID64 pfnWow64ReadRequestData;
+extern PVOID64 pfnWow64WriteRequestData;
 
 static bool InitializeWow64Functions() {
     PVOID64 hNtdll;
@@ -71,6 +73,8 @@ static bool InitializeWow64Functions() {
         if (!NT_SUCCESS(GetProcAddressWow64(&pfnWow64ReplyWaitReceivePort, hNtdll, "NtReplyWaitReceivePort")))return false;
         if (!NT_SUCCESS(GetProcAddressWow64(&pfnWow64ReplyWaitReceivePortEx, hNtdll, "NtReplyWaitReceivePortEx")))return false;
         if (!NT_SUCCESS(GetProcAddressWow64(&pfnWow64ImpersonateClientOfPort, hNtdll, "NtImpersonateClientOfPort")))return false;
+        if (!NT_SUCCESS(GetProcAddressWow64(&pfnWow64ReadRequestData, hNtdll, "NtReadRequestData")))return false;
+        if (!NT_SUCCESS(GetProcAddressWow64(&pfnWow64WriteRequestData, hNtdll, "NtWriteRequestData")))return false;
     }
 
     return true;

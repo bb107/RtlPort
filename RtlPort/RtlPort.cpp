@@ -39,6 +39,8 @@ PVOID64 pfnWow64ReplyWaitReplyPort;
 PVOID64 pfnWow64ReplyWaitReceivePort;
 PVOID64 pfnWow64ReplyWaitReceivePortEx;
 PVOID64 pfnWow64ImpersonateClientOfPort;
+PVOID64 pfnWow64ReadRequestData;
+PVOID64 pfnWow64WriteRequestData;
 
 
 NTSTATUS NTAPI Wow64ConnectPort(
@@ -157,6 +159,34 @@ NTSTATUS NTAPI Wow64ImpersonateClientOfPort(
 	ULONG64 parameters[]{ ULONG64(PortHandle),ULONG64(Message) };
 
 	InvokeX64(&result, pfnWow64ImpersonateClientOfPort, parameters, sizeof(parameters) / sizeof(ULONG64));
+	return NTSTATUS(result);
+}
+
+NTSTATUS NTAPI Wow64ReadRequestData(
+	_In_ HANDLE PortHandle,
+	_In_ PPORT_MESSAGE Message,
+	_In_ ULONG DataEntryIndex,
+	_Out_ PVOID Buffer,
+	_In_ SIZE_T BufferSize,
+	_Out_opt_ PSIZE_T NumberOfBytesRead) {
+	ULONG64 result;
+	ULONG64 parameters[]{ ULONG64(PortHandle),ULONG64(Message),ULONG64(DataEntryIndex),ULONG64(Buffer),ULONG64(BufferSize),ULONG64(NumberOfBytesRead), };
+
+	InvokeX64(&result, pfnWow64ReadRequestData, parameters, sizeof(parameters) / sizeof(ULONG64));
+	return NTSTATUS(result);
+}
+
+NTSTATUS NTAPI Wow64WriteRequestData(
+	_In_ HANDLE PortHandle,
+	_In_ PPORT_MESSAGE Message,
+	_In_ ULONG DataEntryIndex,
+	_In_ PVOID Buffer,
+	_In_ SIZE_T BufferSize,
+	_Out_opt_ PSIZE_T NumberOfBytesWritten) {
+	ULONG64 result;
+	ULONG64 parameters[]{ ULONG64(PortHandle),ULONG64(Message),ULONG64(DataEntryIndex),ULONG64(Buffer),ULONG64(BufferSize),ULONG64(NumberOfBytesWritten), };
+
+	InvokeX64(&result, pfnWow64WriteRequestData, parameters, sizeof(parameters) / sizeof(ULONG64));
 	return NTSTATUS(result);
 }
 
@@ -415,20 +445,41 @@ VOID NTAPI RtlpMapPortMessageToPortMessage64(
 	_In_reads_bytes_(pPortMessage32->u1.s1.TotalLength) PPORT_MESSAGE pPortMessage32,
 	_Out_writes_bytes_(pPortMessage32->u1.s1.DataLength + sizeof(*pPortMessage64)) PPORT_MESSAGE64 pPortMessage64) {
 
-	pPortMessage64->u1.s1.DataLength = pPortMessage32->u1.s1.DataLength;
-	pPortMessage64->u1.s1.TotalLength = sizeof(PORT_MESSAGE64) + pPortMessage32->u1.s1.DataLength;
 	pPortMessage64->u2.ZeroInit = pPortMessage32->u2.ZeroInit;
 	pPortMessage64->ClientId.UniqueProcess = (size_t)pPortMessage32->ClientId.UniqueProcess;
 	pPortMessage64->ClientId.UniqueThread = (size_t)pPortMessage32->ClientId.UniqueThread;
 	pPortMessage64->MessageId = pPortMessage32->MessageId;
 	pPortMessage64->ClientViewSize = pPortMessage32->ClientViewSize;
 
-	if (pPortMessage32->u1.s1.DataLength)
+	CSHORT DataLength = pPortMessage32->u2.s2.DataInfoOffset ? pPortMessage32->u2.s2.DataInfoOffset - sizeof(PORT_MESSAGE) : pPortMessage32->u1.s1.DataLength;
+	CSHORT DataInfo64Length = 0;
+
+	if (pPortMessage32->u2.s2.DataInfoOffset) {
+		auto pData32 = PPORT_DATA_INFORMATION(LPBYTE(pPortMessage32) + pPortMessage32->u2.s2.DataInfoOffset);
+		auto pData64 = PPORT_DATA_INFORMATION64(LPBYTE(pPortMessage64) + (pPortMessage64->u2.s2.DataInfoOffset = sizeof(PORT_MESSAGE64) + DataLength));
+
+		DataInfo64Length = sizeof(PORT_DATA_INFORMATION64) + sizeof(PORT_DATA_ENTRY64) * (pData32->CountDataEntries - 1);
+		assert(DataInfo64Length > 0);
+
+		for (pData64->CountDataEntries = 0; pData64->CountDataEntries <= pData32->CountDataEntries; ++pData64->CountDataEntries) {
+			auto& entry64 = pData64->DataEntries[pData64->CountDataEntries];
+			auto const& entry32 = pData32->DataEntries[pData64->CountDataEntries];
+			entry64.Base = entry32.Base;
+			entry64.Size = entry32.Size;
+		}
+	}
+
+	if (DataLength) {
 		RtlCopyMemory(
 			LPBYTE(pPortMessage64) + sizeof(*pPortMessage64),
 			LPBYTE(pPortMessage32) + sizeof(*pPortMessage32),
-			pPortMessage32->u1.s1.DataLength
+			DataLength
 		);
+	}
+
+	pPortMessage64->u1.s1.DataLength = DataLength + DataInfo64Length;
+	pPortMessage64->u1.s1.TotalLength = sizeof(PORT_MESSAGE64) + pPortMessage32->u1.s1.DataLength;
+
 }
 
 //priv
@@ -436,20 +487,44 @@ VOID NTAPI RtlpMapPortMessage64ToPortMessage(
 	_In_reads_bytes_(pPortMessage64->u1.s1.TotalLength) PPORT_MESSAGE64 pPortMessage64,
 	_Out_writes_bytes_(pPortMessage64->u1.s1.DataLength + sizeof(*pPortMessage32)) PPORT_MESSAGE pPortMessage32) {
 
-	pPortMessage32->u1.s1.DataLength = pPortMessage64->u1.s1.DataLength;
-	pPortMessage32->u1.s1.TotalLength = sizeof(PORT_MESSAGE) + pPortMessage64->u1.s1.DataLength;
 	pPortMessage32->u2.ZeroInit = pPortMessage64->u2.ZeroInit;
 	pPortMessage32->ClientId.UniqueProcess = (HANDLE)pPortMessage64->ClientId.UniqueProcess;
 	pPortMessage32->ClientId.UniqueThread = (HANDLE)pPortMessage64->ClientId.UniqueThread;
 	pPortMessage32->MessageId = pPortMessage64->MessageId;
 	pPortMessage32->ClientViewSize = pPortMessage64->ClientViewSize;
 
-	if (pPortMessage64->u1.s1.DataLength)
+	CSHORT DataLength = pPortMessage64->u2.s2.DataInfoOffset ? pPortMessage64->u2.s2.DataInfoOffset - sizeof(PORT_MESSAGE64) : pPortMessage64->u1.s1.DataLength;
+	CSHORT DataInfo32Length = 0;
+
+	if (pPortMessage64->u2.s2.DataInfoOffset) {
+		auto pData32 = PPORT_DATA_INFORMATION(LPBYTE(pPortMessage32) + (pPortMessage32->u2.s2.DataInfoOffset = sizeof(PORT_MESSAGE) + DataLength));
+		auto pData64 = PPORT_DATA_INFORMATION64(LPBYTE(pPortMessage64) + pPortMessage64->u2.s2.DataInfoOffset);
+
+		DataInfo32Length = sizeof(PORT_DATA_INFORMATION) + sizeof(PORT_DATA_ENTRY) * (pData64->CountDataEntries - 1);
+		assert(DataInfo32Length > 0);
+
+		for (pData32->CountDataEntries = 0; pData32->CountDataEntries <= pData64->CountDataEntries; ++pData32->CountDataEntries) {
+			auto const& entry64 = pData64->DataEntries[pData64->CountDataEntries];
+			auto& entry32 = pData32->DataEntries[pData64->CountDataEntries];
+
+			assert((ULONG64(entry64.Base) & ~0xffffffffull) == 0);
+
+			entry32.Base = entry64.Base;
+			entry32.Size = entry64.Size;
+		}
+	}
+
+	if (DataLength) {
 		RtlCopyMemory(
 			LPBYTE(pPortMessage32) + sizeof(*pPortMessage32),
 			LPBYTE(pPortMessage64) + sizeof(*pPortMessage64),
-			pPortMessage64->u1.s1.DataLength
+			DataLength
 		);
+	}
+
+	pPortMessage32->u1.s1.DataLength = DataLength + DataInfo32Length;
+	pPortMessage32->u1.s1.TotalLength = sizeof(PORT_MESSAGE) + pPortMessage64->u1.s1.DataLength;
+
 }
 
 //priv
@@ -496,6 +571,10 @@ VOID NTAPI RtlpMapView64ToView(
 	if (pRemoteView32)RtlZeroMemory(pRemoteView32, sizeof(*pRemoteView32));
 
 	if (pLocalView32 && pLocalView64) {
+		assert((ULONG64(pLocalView64->SectionHandle) & ~0xffffffffull) == 0);
+		assert((ULONG64(pLocalView64->ViewBase) & ~0xffffffffull) == 0);
+		assert((ULONG64(pLocalView64->ViewRemoteBase) & ~0xffffffffull) == 0);
+
 		pLocalView32->SectionHandle = (HANDLE)pLocalView64->SectionHandle;
 		pLocalView32->SectionOffset = pLocalView64->SectionOffset;
 		pLocalView32->ViewBase = (PVOID)pLocalView64->ViewBase;
@@ -504,6 +583,8 @@ VOID NTAPI RtlpMapView64ToView(
 		pLocalView32->Length = sizeof(PORT_VIEW);
 	}
 	if (pRemoteView32 && pRemoteView64) {
+		assert((ULONG64(pRemoteView64->ViewBase) & ~0xffffffffull) == 0);
+		
 		pRemoteView32->ViewBase = (PVOID)pRemoteView64->ViewBase;
 		pRemoteView32->ViewSize = pRemoteView64->ViewSize;
 		pRemoteView32->Length = sizeof(REMOTE_PORT_VIEW);
@@ -570,16 +651,20 @@ NTSTATUS NTAPI RtlListenPort(
 	auto req = (PPORT_MESSAGE)&pMessageContext->PortMessage;
 
 #ifndef _WIN64
-	PORT_MESSAGE Msg{};
-	req = &Msg;
+	ULONG maxLength;
+	LPVOID MsgBuffer;
+
+	RtlpGetSystemLpcMessageMaxLength(&maxLength, nullptr);
+	req = PPORT_MESSAGE(MsgBuffer = RtlZeroMemory(new char[maxLength], maxLength));
 #endif
 
 	status = NtListenPort(PortHandle, req);
 
 #ifndef _WIN64
 	if (NT_SUCCESS(status)) {
-		RtlpMapPortMessageToPortMessage64(&Msg, &pMessageContext->PortMessage);
+		RtlpMapPortMessageToPortMessage64(req, &pMessageContext->PortMessage);
 	}
+	delete[]MsgBuffer;
 #endif
 	return status;
 }
@@ -826,7 +911,7 @@ NTSTATUS NTAPI RtlImpersonateClientOfPort(
 
 
 _Check_return_
-NTSTATUS NTAPI RtlWriteRequestData(
+NTSTATUS NTAPI RtlWriteRequestData2(
 	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
 	_In_reads_bytes_opt_(dwDataLength) LPCVOID pDataToWrite,
 	_In_ DWORD dwDataLength) {
@@ -839,6 +924,7 @@ NTSTATUS NTAPI RtlWriteRequestData(
 	pMessageContext->PortMessage.u1.s1.DataLength = dwDataLength;
 	pMessageContext->PortMessage.u1.s1.TotalLength = sizeof(PORT_MESSAGE64) + dwDataLength;
 	pMessageContext->PortMessage.u2.s2.Type = 0;
+	pMessageContext->PortMessage.u2.s2.DataInfoOffset = 0;
 
 	if (dwDataLength)
 		RtlCopyMemory(pMessageContext->LpcData, pDataToWrite, dwDataLength);
@@ -847,10 +933,118 @@ NTSTATUS NTAPI RtlWriteRequestData(
 }
 
 _Check_return_
-NTSTATUS NTAPI RtlWriteReplyData(
+NTSTATUS NTAPI RtlWriteReplyData2(
 	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
 	_In_reads_bytes_opt_(dwDataLength) LPCVOID pDataToWrite,
 	_In_ DWORD dwDataLength) {
-	return RtlWriteRequestData(pMessageContext, pDataToWrite, dwDataLength);
+	return RtlWriteRequestData2(pMessageContext, pDataToWrite, dwDataLength);
 }
 
+_Check_return_
+NTSTATUS NTAPI RtlAddPortDataInformation(
+	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
+	_In_ PPORT_DATA_ENTRY pPortDataEntry) {
+
+	ULONG maxData = 0, maxMsg = 0;
+	auto& Msg = pMessageContext->PortMessage;
+	RtlpGetSystemLpcMessageMaxLength(&maxMsg, &maxData);
+
+	// align to 8-byte boundary
+	const auto round = sizeof(ULONG64) - 1;
+	CSHORT delta = Msg.u2.s2.DataInfoOffset ? sizeof(PORT_DATA_ENTRY64) : sizeof(PORT_DATA_INFORMATION64);
+	CSHORT alignedData = (Msg.u1.s1.DataLength + round) & ~round;
+	CSHORT alignedTotal = (Msg.u1.s1.TotalLength + round) & ~round;
+
+	if (delta + alignedData > maxData || delta + alignedTotal > maxMsg) {
+		return STATUS_PORT_MESSAGE_TOO_LONG;
+	}
+
+	PPORT_DATA_INFORMATION64 DataInfo = nullptr;
+	if (!Msg.u2.s2.DataInfoOffset) {
+		Msg.u2.s2.DataInfoOffset = sizeof(PORT_MESSAGE64) + alignedData;
+		DataInfo = PPORT_DATA_INFORMATION64(LPBYTE(&pMessageContext->PortMessage) + Msg.u2.s2.DataInfoOffset);
+		DataInfo->CountDataEntries = 0;
+	}
+	else {
+		DataInfo = PPORT_DATA_INFORMATION64(LPBYTE(&pMessageContext->PortMessage) + Msg.u2.s2.DataInfoOffset);
+	}
+
+	DataInfo->DataEntries[DataInfo->CountDataEntries++] = { pPortDataEntry->Base,pPortDataEntry->Size };
+	
+	Msg.u1.s1.DataLength = alignedData + delta;
+	Msg.u1.s1.TotalLength = alignedTotal + delta;
+
+	return STATUS_SUCCESS;
+}
+
+_Check_return_
+NTSTATUS NTAPI RtlRemovePortDataInformation(
+	_Inout_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext) {
+
+	pMessageContext->PortMessage.u1.s1.DataLength = pMessageContext->PortMessage.u2.s2.DataInfoOffset - sizeof(PORT_MESSAGE64);
+	pMessageContext->PortMessage.u2.s2.DataInfoOffset = 0;
+	return STATUS_SUCCESS;
+
+}
+
+NTSTATUS NTAPI RtlReadRequestData(
+	_In_ HANDLE PortHandle,
+	_In_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
+	_In_ ULONG DataEntryIndex,
+	_Out_ PVOID Buffer,
+	_In_ SIZE_T BufferSize,
+	_Out_opt_ PSIZE_T NumberOfBytesRead) {
+	NTSTATUS status;
+
+	if (RtlpIsWow64Process()) {
+		ULONG64 num = 0;
+		status = Wow64ReadRequestData(PortHandle, PPORT_MESSAGE(&pMessageContext->PortMessage), DataEntryIndex, Buffer, BufferSize, PSIZE_T(&num));
+		if (NumberOfBytesRead)*NumberOfBytesRead = num;
+		return status;
+	}
+
+	auto Msg = PPORT_MESSAGE(&pMessageContext->PortMessage);
+
+#ifndef _WIN64
+	Msg = RtlpMapPortMessage64ToPortMessageAllocate(&pMessageContext->PortMessage);
+#endif
+
+	status = NtReadRequestData(PortHandle, Msg, DataEntryIndex, Buffer, BufferSize, NumberOfBytesRead);
+
+#ifndef  _WIN64
+	RtlpMapPortMessageToPortMessage64(Msg, &pMessageContext->PortMessage);
+	RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, Msg);
+#endif
+	return status;
+}
+
+NTSTATUS NTAPI RtlWriteRequestData(
+	_In_ HANDLE PortHandle,
+	_In_ PRTL_PORT_MESSAGE_CONTEXT pMessageContext,
+	_In_ ULONG DataEntryIndex,
+	_In_ PVOID Buffer,
+	_In_ SIZE_T BufferSize,
+	_Out_opt_ PSIZE_T NumberOfBytesWritten) {
+	NTSTATUS status;
+
+	if (RtlpIsWow64Process()) {
+		ULONG64 num = 0;
+		status = Wow64WriteRequestData(PortHandle, PPORT_MESSAGE(&pMessageContext->PortMessage), DataEntryIndex, Buffer, BufferSize, PSIZE_T(&num));
+		if (NumberOfBytesWritten)*NumberOfBytesWritten = num;
+		return status;
+	}
+
+	auto Msg = PPORT_MESSAGE(&pMessageContext->PortMessage);
+
+#ifndef _WIN64
+	Msg = RtlpMapPortMessage64ToPortMessageAllocate(&pMessageContext->PortMessage);
+#endif
+
+	status = NtWriteRequestData(PortHandle, Msg, DataEntryIndex, Buffer, BufferSize, NumberOfBytesWritten);
+
+#ifndef  _WIN64
+	RtlpMapPortMessageToPortMessage64(Msg, &pMessageContext->PortMessage);
+	RtlFreeHeap(NtCurrentPeb()->ProcessHeap, 0, Msg);
+#endif
+	return status;
+}

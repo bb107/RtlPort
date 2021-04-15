@@ -3,6 +3,8 @@
 #include "../RtlPort/RtlNative.h"
 #include "../RtlPort/RtlPort.h"
 
+BYTE Buffer[] = { 0,1,2,3,4,5,6,7,8,9,0xa,0xb,0xc,0xd,0xe,0xf };
+
 DWORD NTAPI ClientThread(PVOID) {
     HANDLE hPort = nullptr;
     PRTL_PORT_MESSAGE_CONTEXT pContext = nullptr;
@@ -17,12 +19,11 @@ DWORD NTAPI ClientThread(PVOID) {
         if (!NT_SUCCESS(RtlRequestWaitReplyPort(hPort, pContext)))break;
         if (RtlMessageDataLength(pContext) != 12 || strcmp("HelloWorld!", (LPCSTR)RtlMessageDataPtr(pContext)))break;
 
-        if (!NT_SUCCESS(RtlWriteRequestUlong(pContext, 0xccddccdd)))break;
-        if (!NT_SUCCESS(RtlRequestWaitReplyPort(hPort, pContext)))break;
-        if (RtlMessageDataLength(pContext))break;
+        PORT_DATA_ENTRY e{ Buffer,0x10 };
+        if (!NT_SUCCESS(RtlWriteRequestData2(pContext, "you look look me!", 18)))break;
+        if (!NT_SUCCESS(RtlAddPortDataInformation(pContext, &e)))break;
 
-        if (!NT_SUCCESS(RtlWriteRequestUlong(pContext, 0x00000000)))break;
-        if (!NT_SUCCESS(RtlRequestPort(hPort, pContext)))break;
+        if (!NT_SUCCESS(RtlRequestWaitReplyPort(hPort, pContext)))break;
 
         printf("Client success.\n");
 
@@ -48,33 +49,23 @@ int main() {
             RtlAcceptConnectPort(&hMessage, nullptr, FALSE, pContext);
             break;
         }
+
         if (!NT_SUCCESS(RtlAcceptConnectPort(&hMessage, nullptr, TRUE, pContext)) || !NT_SUCCESS(RtlCompleteConnectPort(hMessage))) break;
 
-        do {
-            if (!NT_SUCCESS(status = RtlReplyWaitReceivePort(hMessage, FALSE, nullptr, pContext)))break;
-            if (4 != RtlMessageDataLength(pContext))break;
-            switch (*LPDWORD(RtlMessageDataPtr(pContext))) {
-            case 0xffeeffee: {
-                if (!NT_SUCCESS(status = RtlWriteReplyData(pContext, "HelloWorld!", 12)))break;
-                if (!NT_SUCCESS(status = RtlReplyPort(hMessage, pContext)))break;
-                break;
-            }
-            case 0xccddccdd: {
-                if (!NT_SUCCESS(status = RtlWriteReplyData(pContext, nullptr, 0)))break;
-                if (!NT_SUCCESS(status = RtlReplyPort(hMessage, pContext)))break;
-                break;
-            }
-            case 0x00000000: {
-                status = 0xC0000000;
-                printf("Server success.\n");
-                break;
-            }
-            default: {
-                status = 0x80000000;
-                break;
-            }
-            }
-        } while (NT_SUCCESS(status));
+        if (!NT_SUCCESS(status = RtlReplyWaitReceivePort(hMessage, FALSE, nullptr, pContext)))break;
+        if (4 != RtlMessageDataLength(pContext))break;
+        if (*LPDWORD(RtlMessageDataPtr(pContext)) != 0xffeeffee)break;
+        if (!NT_SUCCESS(status = RtlWriteReplyData2(pContext, "HelloWorld!", 12)))break;
+        if (!NT_SUCCESS(status = RtlReplyPort(hMessage, pContext)))break;
+
+        if (!NT_SUCCESS(status = RtlReplyWaitReceivePort(hMessage, FALSE, nullptr, pContext)))break;
+        printf("%s\n", RtlMessageDataPtr(pContext));
+        BYTE buf[0x10];
+        status = RtlReadRequestData(hMessage, pContext, 0, buf, 0x10, nullptr);
+
+        RtlWriteReplyUlong(pContext, 0);
+        status = RtlReplyPort(hMessage, pContext);
+        Sleep(1);
     } while (false);
 
     if (hThread)NtClose(hThread);

@@ -15,8 +15,13 @@ RtlListenPort
 RtlAcceptConnectPort
 RtlCompleteConnectPort
 
-RtlWriteReplyData
+RtlWriteReplyData2
+RtlWriteRequestData2
+
+RtlReadRequestData
 RtlWriteRequestData
+RtlAddPortDataInformation
+RtlRemovePortDataInformation
 
 RtlRequestPort
 RtlRequestWaitReplyPort
